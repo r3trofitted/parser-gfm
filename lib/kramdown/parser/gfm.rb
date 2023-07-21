@@ -158,8 +158,40 @@ module Kramdown
       end
 
       FENCED_CODEBLOCK_START = /^[ ]{0,3}[~`]{3,}/.freeze
-      FENCED_CODEBLOCK_MATCH = /^[ ]{0,3}(([~`]){3,})\s*?((\S+?)(?:\?\S*)?)?\s*?\n(.*?)^[ ]{0,3}\1\2*\s*?\n/m.freeze
-      define_parser(:codeblock_fenced_gfm, FENCED_CODEBLOCK_START, nil, 'parse_codeblock_fenced')
+      FENCED_CODEBLOCK_MATCH = /
+        ^
+          (?<indentation>[ ]{0,3})                          # Indentation
+          (?<fence>(?<fence_character>[~`]){3,})            # Code fence
+          \s*?                                              # Optional whitespace before the info string
+          (?<info_string>                                   # Info string
+            (?<lang>\S+?)                                   #   Language part of the info string
+            (\?\S*)?                                        #   Options part of the info string, like GET params in a URL
+          )?
+          \s*?\n                                            # Optional whitespace after the code fence and info string
+          (?<code>.*?)                                      # Actual code block
+          ^\k<indentation>\k<fence>\k<fence_character>*\s*? # Closing fence
+        \n
+      /mx.freeze
+      define_parser(:codeblock_fenced_gfm, FENCED_CODEBLOCK_START, nil)
+      
+      def parse_codeblock_fenced_gfm
+        if @src.check(self.class::FENCED_CODEBLOCK_MATCH)
+          start_line_number = @src.current_line_number
+          @src.pos += @src.matched_size
+          data = @src[:code].gsub!(/^#{@src[:indentation]}/, '') # scrubbing the fence indentation
+          
+          el = new_block_el(:codeblock, data, nil, location: start_line_number, fenced: true)
+          info_string = @src[:info_string].to_s.strip
+          unless info_string.empty?
+            el.options[:lang] = info_string # the option's name doesn't fit its actual content, but ¯\_(ツ)_/¯
+            el.attr['class'] = "language-#{@src[:lang]}"
+          end
+          @tree.children << el
+          true
+        else
+          false
+        end
+      end
 
       STRIKETHROUGH_DELIM = /~~/.freeze
       STRIKETHROUGH_MATCH = /#{STRIKETHROUGH_DELIM}(?!\s|~).*?[^\s~]#{STRIKETHROUGH_DELIM}/m.freeze
